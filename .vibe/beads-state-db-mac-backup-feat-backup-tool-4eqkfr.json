@@ -1,0 +1,44 @@
+{
+  "conversationId": "db-mac-backup-feat-backup-tool-4eqkfr",
+  "projectPath": "/Users/oliverjaegle/projects/deutschebahn/db-mac-backup",
+  "epicId": "db-mac-backup-1",
+  "phaseTasks": [
+    {
+      "phaseId": "questions",
+      "phaseName": "Questions",
+      "taskId": "db-mac-backup-1.1"
+    },
+    {
+      "phaseId": "research",
+      "phaseName": "Research",
+      "taskId": "db-mac-backup-1.2"
+    },
+    {
+      "phaseId": "design",
+      "phaseName": "Design",
+      "taskId": "db-mac-backup-1.3"
+    },
+    {
+      "phaseId": "structure",
+      "phaseName": "Structure",
+      "taskId": "db-mac-backup-1.4"
+    },
+    {
+      "phaseId": "plan",
+      "phaseName": "Plan",
+      "taskId": "db-mac-backup-1.5"
+    },
+    {
+      "phaseId": "implement",
+      "phaseName": "Implement",
+      "taskId": "db-mac-backup-1.6"
+    },
+    {
+      "phaseId": "commit",
+      "phaseName": "Commit",
+      "taskId": "db-mac-backup-1.7"
+    }
+  ],
+  "createdAt": "2026-06-12T04:06:40.927Z",
+  "updatedAt": "2026-06-12T04:06:40.927Z"
+}

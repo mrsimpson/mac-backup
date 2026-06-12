@@ -1,0 +1,9 @@
+{
+  "name": "db-mac-backup",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@clack/prompts": "^0.11.0"
+  }
+}
