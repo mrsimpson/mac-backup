@@ -46,7 +46,12 @@ export async function runRestore() {
   p.intro(`db-backup — restore${dryRunSuffix}`);
   p.note(available.map(a => `• ${a}`).join('\n'), 'Available to restore');
 
-  const confirmed = await p.confirm({ message: 'Proceed with restore?' });
+  let confirmed = true;
+  if (process.env.YES === 'true') {
+    p.log.step('Proceed with restore? Yes (--yes flag)');
+  } else {
+    confirmed = await p.confirm({ message: 'Proceed with restore?' });
+  }
   if (p.isCancel(confirmed) || !confirmed) {
     p.outro('Nothing restored.');
     return;

@@ -2,10 +2,14 @@
 
 // Parse global flags before subcommand
 const args = process.argv.slice(2);
-const dryRunIndex = args.indexOf('--dry-run');
-if (dryRunIndex !== -1) {
-  process.env.DRY_RUN = 'true';
-  args.splice(dryRunIndex, 1); // remove the flag so it doesn't confuse dispatch
+
+for (const flag of ['--dry-run', '--yes']) {
+  const idx = args.indexOf(flag);
+  if (idx !== -1) {
+    const envName = flag.slice(2).replace(/-/g, '_').toUpperCase();
+    process.env[envName] = 'true';
+    args.splice(idx, 1);
+  }
 }
 
 const [cmd] = args;
@@ -27,7 +31,7 @@ switch (cmd) {
     break;
   }
   default:
-    console.log('Usage: db-backup [--dry-run] <config|backup|restore>');
+    console.log('Usage: db-backup [--dry-run] [--yes] <config|backup|restore>');
     console.log('  config   — interactive setup wizard');
     console.log('  backup   — run backup');
     console.log('  restore  — restore from backup');
