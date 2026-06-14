@@ -63,18 +63,64 @@ export async function runRestore() {
     }
 
     if (available.includes('git')) {
-      await runStep('Git repos', async () => {
-        const gitBackupDir = path.join(dest, 'git');
-        const repoDirs = fs.readdirSync(gitBackupDir, { withFileTypes: true })
-          .filter(e => e.isDirectory())
-          .map(e => path.join(gitBackupDir, e.name));
-        let count = 0;
-        for (const repoDir of repoDirs) {
-          await restoreRepo(repoDir, home);
-          count++;
+      const gitBackupDir = path.join(dest, 'git');
+      const repoDirs = fs.readdirSync(gitBackupDir, { withFileTypes: true })
+        .filter(e => e.isDirectory())
+        .map(e => path.join(gitBackupDir, e.name));
+
+      const gitSpinner = p.spinner();
+      gitSpinner.start(`Git repos — 0/${repoDirs.length}`);
+
+      let restoredCount = 0;
+      let skippedCount = 0;
+      let errorCount = 0;
+
+      for (let index = 0; index < repoDirs.length; index++) {
+        const repoDir = repoDirs[index];
+        const folderName = path.basename(repoDir);
+        const shortName = folderName.replace(/__/g, '/');
+        const metaPath = path.join(repoDir, 'meta.json');
+
+        // Check meta.json existence before calling restoreRepo so we log cleanly
+        if (!fs.existsSync(metaPath)) {
+          p.log.step(`${shortName} [meta.json missing, skipped]`);
+          skippedCount++;
+          gitSpinner.message(`Git repos — ${index + 1}/${repoDirs.length}`);
+          continue;
         }
-        return count;
-      });
+
+        try {
+          const result = await restoreRepo(repoDir, home, ({ folderName: fn, step, status, detail }) => {
+            // Build per-step badge
+            const statusIcon = status === 'ok' ? '✓' : status === 'skip' ? '–' : '✗';
+            const stepStr = step === 'read-meta' ? 'meta' : step;
+            const detailStr = detail ? ` ${detail}` : '';
+            // Only log non-skip steps that actually did something
+            if (status !== 'skip') {
+              p.log.step(`  ${shortName}: ${stepStr} ${statusIcon}${detailStr}`);
+            }
+          });
+
+          if (result.restored) {
+            restoredCount++;
+          } else if (result.skipped) {
+            skippedCount++;
+          } else {
+            errorCount++;
+          }
+        } catch (e) {
+          p.log.step(`${shortName} [restore error: ${e.message}]`);
+          errorCount++;
+        }
+
+        gitSpinner.message(`Git repos — ${index + 1}/${repoDirs.length}`);
+      }
+
+      const parts = [];
+      if (restoredCount > 0) parts.push(`${restoredCount} restored`);
+      if (skippedCount > 0) parts.push(`${skippedCount} skipped`);
+      if (errorCount > 0) parts.push(`${errorCount} errors`);
+      gitSpinner.stop(`Git repos: ${parts.join(', ')} ✓`);
     }
 
     if (available.includes('dotfiles')) {

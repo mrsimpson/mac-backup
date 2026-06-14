@@ -184,11 +184,25 @@ export async function backupAllRepos(root, dest, onProgress) {
 
 /**
  * Restore a single git repo from a backup directory.
+ *
+ * @param {string}   repoBackupDir - Path to the backup directory for one repo.
+ * @param {string}   targetRoot    - Root under which to restore (unused, originalPath is used).
+ * @param {Function} [onProgress]  - Called after each step with:
+ *   { folderName, step, status, detail? }
  */
-export async function restoreRepo(repoBackupDir, targetRoot) {
+export async function restoreRepo(repoBackupDir, targetRoot, onProgress = () => {}) {
   const metaPath = path.join(repoBackupDir, 'meta.json');
-  const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+
+  let meta;
+  try {
+    meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+  } catch {
+    onProgress({ folderName: path.basename(repoBackupDir), step: 'read-meta', status: 'error', detail: 'meta.json missing or corrupt' });
+    return { restored: false, skipped: true, reason: 'meta.json missing' };
+  }
+
   const { path: originalPath, remotes, hasChanges, hasUnpushedCommits } = meta;
+  const folderName = path.basename(repoBackupDir);
 
   const targetPath = originalPath;
   const origin = remotes.origin || Object.values(remotes)[0] || '';
@@ -204,27 +218,58 @@ export async function restoreRepo(repoBackupDir, targetRoot) {
         ? `# git clone ${q(bundleFile)} ${q(targetPath)}\n`
         : '');
     fs.writeFileSync(path.join(repoBackupDir, '.restore-instructions.txt'), instructions);
-    return { restored: false, hadChanges: !!hasChanges, hadUnpushedCommits: !!hasUnpushedCommits };
+    onProgress({ folderName, step: 'clone', status: 'skip', detail: 'no remotes' });
+    return { restored: false, hadChanges: !!hasChanges, hadUnpushedCommits: !!hasUnpushedCommits, skipped: true };
   }
 
-  await run('git', ['clone', origin, targetPath]);
+  // --- clone ---
+  try {
+    await run('git', ['clone', origin, targetPath]);
+    onProgress({ folderName, step: 'clone', status: 'ok', detail: origin });
+  } catch (e) {
+    onProgress({ folderName, step: 'clone', status: 'error', detail: e.message });
+    return { restored: false, hadChanges: !!hasChanges, hadUnpushedCommits: !!hasUnpushedCommits, skipped: false };
+  }
 
+  // --- unbundle local commits ---
   if (hasUnpushedCommits && fs.existsSync(bundleFile)) {
-    await run('git', ['-C', targetPath, 'bundle', 'unbundle', bundleFile],
-      { stdio: ['inherit', 'pipe', 'pipe'] });
-  }
-
-  if (hasChanges && fs.existsSync(patchFile)) {
-    await run('git', ['-C', targetPath, 'apply', patchFile],
-      { stdio: ['inherit', 'pipe', 'pipe'] });
-  }
-
-  if (hasUnpushedCommits && meta.branch && meta.branch !== 'unknown') {
     try {
-      await run('git', ['-C', targetPath, 'checkout', meta.branch],
+      await run('git', ['-C', targetPath, 'bundle', 'unbundle', bundleFile],
         { stdio: ['inherit', 'pipe', 'pipe'] });
-    } catch {}
+      onProgress({ folderName, step: 'unbundle', status: 'ok', detail: meta.branch || '(local branches)' });
+    } catch (e) {
+      onProgress({ folderName, step: 'unbundle', status: 'error', detail: e.message });
+    }
+  } else {
+    onProgress({ folderName, step: 'unbundle', status: 'skip' });
   }
 
-  return { restored: true, hadChanges: !!hasChanges, hadUnpushedCommits: !!hasUnpushedCommits };
+  // --- checkout correct branch ---
+  const branch = meta.branch && meta.branch !== 'unknown' ? meta.branch : null;
+  if (hasUnpushedCommits && branch) {
+    try {
+      await run('git', ['-C', targetPath, 'checkout', branch],
+        { stdio: ['inherit', 'pipe', 'pipe'] });
+      onProgress({ folderName, step: 'checkout', status: 'ok', detail: branch });
+    } catch (e) {
+      onProgress({ folderName, step: 'checkout', status: 'error', detail: e.message });
+    }
+  } else {
+    onProgress({ folderName, step: 'checkout', status: 'skip' });
+  }
+
+  // --- apply dirty patch ---
+  if (hasChanges && fs.existsSync(patchFile)) {
+    try {
+      await run('git', ['-C', targetPath, 'apply', patchFile],
+        { stdio: ['inherit', 'pipe', 'pipe'] });
+      onProgress({ folderName, step: 'apply', status: 'ok', detail: 'changes.patch' });
+    } catch (e) {
+      onProgress({ folderName, step: 'apply', status: 'error', detail: e.message });
+    }
+  } else {
+    onProgress({ folderName, step: 'apply', status: 'skip' });
+  }
+
+  return { restored: true, hadChanges: !!hasChanges, hadUnpushedCommits: !!hasUnpushedCommits, skipped: false };
 }

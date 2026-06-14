@@ -269,12 +269,19 @@ describe('restoreRepo', () => {
       hasUnpushedCommits: false,
     }));
 
-    await restoreRepo(backupDir, '/home/user/projects');
+    const steps = [];
+    await restoreRepo(backupDir, '/home/user/projects', (s) => steps.push(s));
 
     const spawnCalls = mockSpawn.mock.calls;
     expect(spawnCalls.some(([cmd, args]) => cmd === 'git' && args.includes('clone'))).toBe(true);
     expect(spawnCalls.every(([cmd, args]) => !(cmd === 'git' && args.includes('apply')))).toBe(true);
     expect(spawnCalls.every(([cmd, args]) => !(cmd === 'git' && args.includes('unbundle')))).toBe(true);
+
+    // onProgress should report clone ok, others skip
+    expect(steps.some(s => s.step === 'clone' && s.status === 'ok')).toBe(true);
+    expect(steps.some(s => s.step === 'unbundle' && s.status === 'skip')).toBe(true);
+    expect(steps.some(s => s.step === 'checkout' && s.status === 'skip')).toBe(true);
+    expect(steps.some(s => s.step === 'apply' && s.status === 'skip')).toBe(true);
   });
 
   it('clones, unbundles, and applies patch when both flags are true', async () => {
@@ -289,7 +296,8 @@ describe('restoreRepo', () => {
     fs.writeFileSync(path.join(backupDir, 'changes.patch'), 'patch content');
     fs.writeFileSync(path.join(backupDir, 'local-commits.bundle'), 'bundle data');
 
-    const result = await restoreRepo(backupDir, '/some/root');
+    const steps = [];
+    const result = await restoreRepo(backupDir, '/some/root', (s) => steps.push(s));
 
     const spawnCalls = mockSpawn.mock.calls;
     expect(spawnCalls.some(([cmd, args]) => cmd === 'git' && args.includes('clone'))).toBe(true);
@@ -298,6 +306,12 @@ describe('restoreRepo', () => {
     expect(result.restored).toBe(true);
     expect(result.hadChanges).toBe(true);
     expect(result.hadUnpushedCommits).toBe(true);
+
+    // onProgress should report all steps ok
+    expect(steps.some(s => s.step === 'clone' && s.status === 'ok')).toBe(true);
+    expect(steps.some(s => s.step === 'unbundle' && s.status === 'ok')).toBe(true);
+    expect(steps.some(s => s.step === 'checkout' && s.status === 'ok' && s.detail === 'feat/local')).toBe(true);
+    expect(steps.some(s => s.step === 'apply' && s.status === 'ok')).toBe(true);
   });
 
   it('writes restore-instructions.txt when repo has no remotes', async () => {
@@ -310,8 +324,24 @@ describe('restoreRepo', () => {
       hasUnpushedCommits: false,
     }));
 
-    const result = await restoreRepo(backupDir, '/home/user/projects');
+    const steps = [];
+    const result = await restoreRepo(backupDir, '/home/user/projects', (s) => steps.push(s));
     expect(fs.existsSync(path.join(backupDir, '.restore-instructions.txt'))).toBe(true);
     expect(result.restored).toBe(false);
+    expect(result.skipped).toBe(true);
+    expect(steps.some(s => s.step === 'clone' && s.status === 'skip')).toBe(true);
+  });
+
+  it('returns skipped result when meta.json is missing', async () => {
+    const backupDir = makeTmpDir();
+    // No meta.json written — simulate missing
+
+    const steps = [];
+    const result = await restoreRepo(backupDir, '/home/user/projects', (s) => steps.push(s));
+
+    expect(result.restored).toBe(false);
+    expect(result.skipped).toBe(true);
+    expect(result.reason).toBe('meta.json missing');
+    expect(steps.some(s => s.step === 'read-meta' && s.status === 'error')).toBe(true);
   });
 });
