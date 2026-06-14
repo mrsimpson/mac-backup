@@ -525,9 +525,10 @@ Each slice maps to one or more `bd` sub-tasks under `db-mac-backup-1.5`. Impleme
 | config.test.js | 8 | ✓ |
 | brew.test.js | 4 | ✓ |
 | dotfiles.test.js | 12 | ✓ |
-| git.test.js | 10 | ✓ |
+| git.test.js | 18 | ✓ |
 | integration.test.js | 3 | ✓ |
-| **Total** | **37** | **all pass** |
+| shell.test.js | 8 | ✓ |
+| **Total** | **53** | **all pass** |
 
 ### Key Decisions (V2 — Node.js ESM implementation)
 14. **`autocompleteMultiselect` uses `initialValues` (plural)** — not `initialValue`; accepts `Value[]` for pre-selection
@@ -548,6 +549,7 @@ Each slice maps to one or more `bd` sub-tasks under `db-mac-backup-1.5`. Impleme
 27. **Suppress git/bundle output noise; fix worktree detection** — `findGitRepos` now checks `fs.statSync('.git').isDirectory()` — if `.git` is a file (worktree pointer or submodule), the directory is silently skipped rather than treated as a repo (which caused `fatal: not a git repository` noise). `git bundle create` and restore commands (`unbundle`, `apply`, `checkout`) use `stdio: ['inherit', 'pipe', 'pipe']` so their output is captured and not shown during the spinner. `git clone` on restore keeps `inherit` so the user sees clone progress.
 26. **Git bundle for unpushed commits** — `backupRepo` now also runs `git log --branches --not --remotes --oneline`; if non-empty, runs `git bundle create local-commits.bundle --branches --not --remotes` to capture all local-only commits across all branches. `meta.json` gains `hasUnpushedCommits` field. On restore: after cloning from remote, runs `git bundle unbundle local-commits.bundle` to re-import local branches, then `git checkout <branch>` to restore the original branch. `backupAllRepos` return value gains `unpushedCount`. Spinner message shows both dirty and unpushed counts.
 23. **No BACKUP_BREW/BACKUP_GIT/BACKUP_DOTFILES boolean flags** — removed the three confirm prompts from the config wizard and the `=== 'true'` guards from backup.js. Rationale: if you've configured a destination, a git root, or selected dotfiles, you always want them backed up — the toggles added friction with no real use-case. Backup is now presence-driven: brew always runs; git runs when `GIT_ROOT` is set; dotfiles runs when `DOTFILES_PATHS` is non-empty. Config file now has only three keys: `BACKUP_DEST`, `DOTFILES_PATHS`, `GIT_ROOT`.
+32. **Per-repo detailed logging during git restore** — `restoreRepo` now accepts an `onProgress({ folderName, step, status, detail })` callback emitted after each step (read-meta, clone, unbundle, checkout, apply). Non-skip steps are logged per-repo as indented `p.log.step()` lines (e.g. `  my-org/repo: clone ✓ git@github.com:org/repo.git`). Missing meta.json returns `{ restored: false, skipped: true }` instead of throwing, logged as `[meta.json missing, skipped]`. `restore.js` shows a dedicated spinner with progress counter (N/Total) and a summary line (`X restored, Y skipped, Z errors`). One failing repo never kills the entire restore — errors are collected and reported per-repo.
 
 ### Key Decisions (V1 — legacy shell scripts, superseded)
 1. **dialog nicht verfügbar** — `dialog` funktioniert in diesem Terminal nicht (leere Dialoge).
