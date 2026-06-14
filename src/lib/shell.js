@@ -1,4 +1,12 @@
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
+
+/**
+ * Check whether dry-run mode is active (env DRY_RUN=true).
+ * In dry-run mode no commands are actually executed; they are logged instead.
+ */
+function isDryRun() {
+  return process.env.DRY_RUN === 'true';
+}
 
 /**
  * Shell-quote a single path for safe interpolation into a shell command string.
@@ -16,14 +24,8 @@ export function q(p) {
  * Run a command asynchronously, inheriting stdio so the user sees output
  * and Ctrl+C is forwarded to the child process naturally.
  *
- * Returns a promise that:
- *   - resolves with exit code 0 on success
- *   - rejects with an Error on non-zero exit or signal termination
- *     (error.signal is set when killed by a signal)
- *
- * Because spawn is non-blocking, Node's event loop stays alive during
- * execution — SIGINT (Ctrl+C) is handled normally by Node and the child
- * process receives it through the shared process group.
+ * In dry-run mode (DRY_RUN=true), logs the command to stderr and
+ * resolves immediately with no result — no actual spawning happens.
  *
  * @param {string}   cmd  - Command to run.
  * @param {string[]} args - Argument array (no shell interpolation).
@@ -31,6 +33,12 @@ export function q(p) {
  * @returns {Promise<void>}
  */
 export function run(cmd, args, opts = {}) {
+  if (isDryRun()) {
+    const quoted = [cmd, ...args].map(a => a.includes(' ') ? `'${a}'` : a).join(' ');
+    console.error('[DRY-RUN]', quoted);
+    return Promise.resolve();
+  }
+
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { stdio: 'inherit', ...opts });
 
@@ -54,12 +62,17 @@ export function run(cmd, args, opts = {}) {
 
 /**
  * Run a shell pipeline or command that requires shell features (pipes, redirects).
- * Uses spawn with shell:true. Same async/SIGINT behaviour as run().
+ * Uses spawn with shell:true. Same async/dry-run behaviour as run().
  *
  * @param {string} shellCmd - Full shell command string (paths must already be quoted with q()).
  * @returns {Promise<void>}
  */
 export function runShell(shellCmd, opts = {}) {
+  if (isDryRun()) {
+    console.error('[DRY-RUN]', shellCmd);
+    return Promise.resolve();
+  }
+
   return new Promise((resolve, reject) => {
     const child = spawn(shellCmd, { stdio: 'inherit', shell: true, ...opts });
 
@@ -82,12 +95,23 @@ export function runShell(shellCmd, opts = {}) {
 }
 
 /**
- * Run a command and capture its stdout as a string (for git metadata queries).
- * Uses execSync — only appropriate for fast, non-interactive commands.
- * Still used for git metadata (remote -v, status --porcelain, etc.) because
- * those complete in milliseconds and don't need async.
+ * Run a command synchronously and return its stdout (for fast git metadata queries).
  *
- * @param {string} cmd - Shell command string.
+ * In dry-run mode, returns an empty string so callers get graceful defaults
+ * (no remotes, branch 'unknown', no changes, no unpushed commits) via their
+ * existing try/catch or empty-string checks.
+ *
+ * @param {string} cmd  - Shell command string.
+ * @param {object} opts - Options passed to execSync (encoding, stdio).
  * @returns {string}
  */
-export { execSync as runSync } from 'child_process';
+export function runSync(cmd, opts = {}) {
+  if (isDryRun()) {
+    console.error('[DRY-RUN]', cmd);
+    return '';
+  }
+
+  return execSync(cmd, opts);
+}
+
+

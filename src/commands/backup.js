@@ -37,7 +37,8 @@ export async function runBackup() {
   const dest = config.BACKUP_DEST;
   const home = os.homedir();
 
-  p.intro('db-backup — starting backup');
+  const dryRunSuffix = process.env.DRY_RUN === 'true' ? ' (DRY RUN — no commands executed)' : '';
+  p.intro(`db-backup — starting backup${dryRunSuffix}`);
 
   try {
     // Brew — always run
@@ -77,7 +78,7 @@ export async function runBackup() {
       await runStep('Dotfiles', () => backupDotfiles(dotfilesPaths, home, dest));
     }
 
-    p.outro(`Backup complete → ${dest}`);
+    p.outro(`Backup complete → ${dest}${dryRunSuffix}`);
   } catch (e) {
     if (e.signal === 'SIGINT') {
       process.stdout.write('\n');

@@ -42,7 +42,8 @@ export async function runRestore() {
     process.exit(1);
   }
 
-  p.intro('db-backup — restore');
+  const dryRunSuffix = process.env.DRY_RUN === 'true' ? ' (DRY RUN — no commands executed)' : '';
+  p.intro(`db-backup — restore${dryRunSuffix}`);
   p.note(available.map(a => `• ${a}`).join('\n'), 'Available to restore');
 
   const confirmed = await p.confirm({ message: 'Proceed with restore?' });
@@ -75,7 +76,7 @@ export async function runRestore() {
       await runStep('Dotfiles', () => restoreDotfiles(dest, home));
     }
 
-    p.outro('Restore complete');
+    p.outro(`Restore complete${dryRunSuffix}`);
   } catch (e) {
     if (e.signal === 'SIGINT') {
       process.stdout.write('\n');
