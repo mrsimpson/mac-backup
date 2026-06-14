@@ -1,10 +1,10 @@
 {
-  "name": "db-mac-backup",
+  "name": "mac-backup",
   "version": "1.0.0",
   "private": true,
   "type": "module",
   "bin": {
-    "db-backup": "./db-backup"
+    "mac-backup": "./mac-backup"
   },
   "scripts": {
     "test": "vitest run",

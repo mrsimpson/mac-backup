@@ -144,7 +144,7 @@ V1 used separate `backup.sh`, `restore.sh`, `wizard.sh` shell entry points with 
 | # | Decision | Choice | Rationale |
 |---|---|---|---|
 | 1 | **Language** | 100% Node.js ESM — no shell scripts | TDD-friendly; shell logic reimplemented as JS modules |
-| 2 | **Entry point** | Single `./db-backup` binary with subcommands | `config` / `backup` / `restore` — one place for everything |
+| 2 | **Entry point** | Single `./mac-backup` binary with subcommands | `config` / `backup` / `restore` — one place for everything |
 | 3 | **UI library** | `@clack/prompts` 1.5.1 | Reliable readline-based, `autocompleteMultiselect` for dotfiles picker |
 | 4 | **Dotfiles scope** | All `.`-prefixed entries in `$HOME` only | No `~/Library/Application Support/`; user sees real paths with size hints |
 | 5 | **Dotfiles picker** | `autocompleteMultiselect` — type-to-filter + multi-select | Handles 50+ entries gracefully |
@@ -156,7 +156,7 @@ V1 used separate `backup.sh`, `restore.sh`, `wizard.sh` shell entry points with 
 #### File Structure
 
 ```
-db-backup                        ← ESM binary (#!/usr/bin/env node), chmod +x
+mac-backup                        ← ESM binary (#!/usr/bin/env node), chmod +x
 src/
   commands/
     config.js                    ← interactive wizard (dest, categories, gpg, dotfiles, git root)
@@ -172,7 +172,7 @@ src/
     git.test.js
     dotfiles.test.js
     config.test.js
-package.json                     ← type:module, bin: ./db-backup, vitest dep
+package.json                     ← type:module, bin: ./mac-backup, vitest dep
 .backup-config                   ← dotenv (gitignored)
 ```
 

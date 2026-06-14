@@ -30,7 +30,7 @@ export async function runBackup() {
   const config = readConfig(defaultConfigPath());
 
   if (!config.BACKUP_DEST) {
-    p.log.error('No config found. Run: ./db-backup config');
+    p.log.error('No config found. Run: mac-backup config');
     process.exit(1);
   }
 
@@ -38,7 +38,7 @@ export async function runBackup() {
   const home = os.homedir();
 
   const dryRunSuffix = process.env.DRY_RUN === 'true' ? ' (DRY RUN — no commands executed)' : '';
-  p.intro(`db-backup — starting backup${dryRunSuffix}`);
+  p.intro(`mac-backup — starting backup${dryRunSuffix}`);
 
   try {
     // Brew — always run

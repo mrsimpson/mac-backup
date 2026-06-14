@@ -31,7 +31,7 @@ switch (cmd) {
     break;
   }
   default:
-    console.log('Usage: db-backup [--dry-run] [--yes] <config|backup|restore>');
+    console.log('Usage: mac-backup [--dry-run] [--yes] <config|backup|restore>');
     console.log('  config   — interactive setup wizard');
     console.log('  backup   — run backup');
     console.log('  restore  — restore from backup');

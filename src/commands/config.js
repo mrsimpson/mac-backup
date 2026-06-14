@@ -43,7 +43,7 @@ export async function runConfig() {
   const configPath = defaultConfigPath();
   const existing = readConfig(configPath);
 
-  p.intro('db-backup config wizard');
+  p.intro('mac-backup config wizard');
 
   // Step 1: Backup destination
   const defaultDest = existing.BACKUP_DEST || '~/OneDrive - Deutsche Bahn/mac-backup';

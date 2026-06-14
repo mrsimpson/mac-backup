@@ -25,7 +25,7 @@ export async function runRestore() {
   const config = readConfig(defaultConfigPath());
 
   if (!config.BACKUP_DEST) {
-    p.log.error('No config found. Run: ./db-backup config');
+    p.log.error('No config found. Run: mac-backup config');
     process.exit(1);
   }
 
@@ -43,7 +43,7 @@ export async function runRestore() {
   }
 
   const dryRunSuffix = process.env.DRY_RUN === 'true' ? ' (DRY RUN — no commands executed)' : '';
-  p.intro(`db-backup — restore${dryRunSuffix}`);
+  p.intro(`mac-backup — restore${dryRunSuffix}`);
   p.note(available.map(a => `• ${a}`).join('\n'), 'Available to restore');
 
   let confirmed = true;

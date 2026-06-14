@@ -4,7 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const binaryPath = path.join(__dirname, '../../db-backup');
+const binaryPath = path.join(__dirname, '../../mac-backup');
 
 function runBinary(args = []) {
   return spawnSync('node', [binaryPath, ...args], {
@@ -13,7 +13,7 @@ function runBinary(args = []) {
   });
 }
 
-describe('db-backup binary', () => {
+describe('mac-backup binary', () => {
   it('exits 1 with usage when no args provided', () => {
     const result = runBinary([]);
     expect(result.status).toBe(1);

@@ -1,4 +1,4 @@
-# db-mac-backup
+# mac-backup
 
 A minimal macOS backup tool for developer machines. Replaces Time Machine for the things that actually matter.
 
@@ -29,13 +29,13 @@ The key insight for git: **code is not data**. Every repo has a remote. What's i
 
 ```sh
 # First-time setup
-./db-backup config
+./mac-backup config
 
 # Run a backup
-./db-backup backup
+./mac-backup backup
 
 # Restore on a new machine
-./db-backup restore
+./mac-backup restore
 ```
 
 ### `config`
@@ -85,9 +85,9 @@ Shows what's available in the backup destination, asks for confirmation, then re
 
 ```sh
 git clone <this-repo>
-cd db-mac-backup
+cd mac-backup
 npm install
-./db-backup config
+./mac-backup config
 ```
 
 No global install needed. Run directly from the repo.
