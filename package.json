@@ -3,7 +3,17 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "db-backup": "./db-backup"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
   "dependencies": {
-    "@clack/prompts": "^0.11.0"
+    "@clack/prompts": "1.5.1"
+  },
+  "devDependencies": {
+    "vitest": "^3.0.0"
   }
 }

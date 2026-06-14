@@ -1,0 +1,26 @@
+#!/usr/bin/env node
+const [,, cmd] = process.argv;
+
+switch (cmd) {
+  case 'config': {
+    const { runConfig } = await import('./src/commands/config.js');
+    await runConfig();
+    break;
+  }
+  case 'backup': {
+    const { runBackup } = await import('./src/commands/backup.js');
+    await runBackup();
+    break;
+  }
+  case 'restore': {
+    const { runRestore } = await import('./src/commands/restore.js');
+    await runRestore();
+    break;
+  }
+  default:
+    console.log('Usage: db-backup <config|backup|restore>');
+    console.log('  config   — interactive setup wizard');
+    console.log('  backup   — run backup');
+    console.log('  restore  — restore from backup');
+    process.exit(cmd ? 1 : 1);
+}
