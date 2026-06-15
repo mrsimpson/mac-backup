@@ -148,8 +148,19 @@ export async function addSshKeysToAgent(homeDir, onProgress = () => {}) {
 
     try {
       // --apple-use-keychain: retrieve passphrase from macOS Keychain silently
+      // SSH_ASKPASS_REQUIRE=force + a no-op askpass prevents TTY passphrase prompts
+      // that would stall even with stdio ignored. If the key needs a passphrase
+      // not in Keychain, ssh-add exits non-zero and we throw a helpful error.
       await run('ssh-add', ['--apple-use-keychain', keyPath],
-        { stdio: ['ignore', 'ignore', 'ignore'] });
+        { 
+          stdio: ['ignore', 'ignore', 'ignore'],
+          env: { 
+            ...process.env, 
+            SSH_ASKPASS: '/usr/bin/false',
+            SSH_ASKPASS_REQUIRE: 'force',
+            DISPLAY: 'none'
+          }
+        });
       onProgress({ name: key, step: 'ssh-add', status: 'ok' });
     } catch {
       onProgress({ name: key, step: 'ssh-add', status: 'error' });
