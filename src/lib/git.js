@@ -111,7 +111,13 @@ export async function backupRepo(repoPath, dest, root) {
   try {
     statusOutput = runSync(`git -C ${q(repoPath)} status --porcelain`, syncOpts);
   } catch {}
-  const hasChanges = statusOutput.trim().length > 0;
+  
+  // Only consider tracked file modifications as "changes" - untracked files (?? don't need a patch
+  const modifiedOutput = statusOutput.split('\n').filter(line => 
+    line.trim() && !line.startsWith('??')
+  ).join('\n');
+  
+  const hasChanges = modifiedOutput.length > 0;
 
   // --- diff patch (fast, sync) ---
   let patch = '';
@@ -260,12 +266,18 @@ export async function restoreRepo(repoBackupDir, targetRoot, onProgress = () => 
 
   // --- apply dirty patch ---
   if (hasChanges && fs.existsSync(patchFile)) {
-    try {
-      await run('git', ['-C', targetPath, 'apply', patchFile],
-        { stdio: ['inherit', 'pipe', 'pipe'] });
-      onProgress({ folderName, step: 'apply', status: 'ok', detail: 'changes.patch' });
-    } catch (e) {
-      onProgress({ folderName, step: 'apply', status: 'error', detail: e.message });
+    // Skip if patch file is empty (can happen if diff command returned empty but status showed changes)
+    const patchContent = fs.readFileSync(patchFile, 'utf8');
+    if (patchContent.trim().length === 0) {
+      onProgress({ folderName, step: 'apply', status: 'skip', detail: 'empty patch file' });
+    } else {
+      try {
+        await run('git', ['-C', targetPath, 'apply', '--whitespace=cr-at-eol', patchFile],
+          { stdio: ['inherit', 'pipe', 'pipe'] });
+        onProgress({ folderName, step: 'apply', status: 'ok', detail: 'changes.patch' });
+      } catch (e) {
+        onProgress({ folderName, step: 'apply', status: 'error', detail: 'patch could not be applied' });
+      }
     }
   } else {
     onProgress({ folderName, step: 'apply', status: 'skip' });
