@@ -229,9 +229,9 @@ export async function restoreRepo(repoBackupDir, targetRoot, onProgress = () => 
   }
 
 // --- clone ---
+  const isSSH = origin.startsWith('git@') || origin.startsWith('ssh://');
   try {
     // Set GIT_SSH_COMMAND to auto-accept new host keys for SSH remotes
-    const isSSH = origin.startsWith('git@') || origin.startsWith('ssh://');
     const env = isSSH 
       ? { ...process.env, GIT_SSH_COMMAND: 'ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes' }
       : process.env;
