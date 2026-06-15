@@ -88,4 +88,24 @@ export async function restoreDotfiles(dest, homeDir) {
     await run('rsync', ['-rlptgo', '--delete', fullEntry, homeDir + '/'],
       { stdio: ['inherit', 'inherit', 'pipe'] });
   }
+
+  // Add restored SSH keys to the agent
+  const sshDir = path.join(homeDir, '.ssh');
+  if (fs.existsSync(sshDir)) {
+    const files = fs.readdirSync(sshDir);
+    const privateKeys = files.filter(f => 
+      !f.endsWith('.pub') && !f.includes('known_hosts') && !f.includes('config')
+    );
+    
+    if (privateKeys.length > 0) {
+      for (const key of privateKeys) {
+        const keyPath = path.join(sshDir, key);
+        try {
+          await run('ssh-add', [keyPath], { stdio: 'inherit' });
+        } catch {
+          // ssh-add can fail if agent isn't running - that's ok, user can add manually
+        }
+      }
+    }
+  }
 }
