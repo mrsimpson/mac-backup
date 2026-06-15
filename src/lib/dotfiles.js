@@ -101,7 +101,12 @@ export async function restoreDotfiles(dest, homeDir, onProgress = () => {}) {
   if (fs.existsSync(sshDir)) {
     const files = fs.readdirSync(sshDir);
     const privateKeys = files.filter(f => 
-      !f.endsWith('.pub') && !f.includes('known_hosts') && !f.includes('config') && !f.includes('environment')
+      !f.endsWith('.pub') &&           // public keys
+      !f.startsWith('S.') &&           // sockets (S.gpg-agent, etc.) — runtime, not transferable
+      !f.includes('known_hosts') &&    // host fingerprint cache
+      !f.includes('config') &&         // ssh client config
+      !f.includes('environment') &&    // session environment
+      !f.includes('authorized_keys')   // server-side auth list
     );
     
     for (const key of privateKeys) {
