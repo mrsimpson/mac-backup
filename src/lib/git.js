@@ -228,12 +228,17 @@ export async function restoreRepo(repoBackupDir, targetRoot, onProgress = () => 
     return { restored: false, hadChanges: !!hasChanges, hadUnpushedCommits: !!hasUnpushedCommits, skipped: true };
   }
 
-  // --- clone ---
+// --- clone ---
   try {
     // Set GIT_SSH_COMMAND to auto-accept new host keys and disable terminal prompts
     // This prevents stalls when SSH doesn't know github.com's host key
+    // Also disable credential prompts to avoid stalls on HTTPS repos
     await run('git', ['clone', origin, targetPath], {
-      env: { ...process.env, GIT_SSH_COMMAND: 'ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes' }
+      env: { 
+        ...process.env, 
+        GIT_SSH_COMMAND: 'ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes',
+        GIT_TERMINAL_PROMPT: '0'
+      }
     });
     onProgress({ folderName, step: 'clone', status: 'ok', detail: origin });
   } catch (e) {
