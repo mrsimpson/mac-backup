@@ -230,19 +230,25 @@ export async function restoreRepo(repoBackupDir, targetRoot, onProgress = () => 
 
 // --- clone ---
   try {
-    // Set GIT_SSH_COMMAND to auto-accept new host keys and disable terminal prompts
-    // This prevents stalls when SSH doesn't know github.com's host key
-    // Also disable credential prompts to avoid stalls on HTTPS repos
-    await run('git', ['clone', origin, targetPath], {
-      env: { 
-        ...process.env, 
-        GIT_SSH_COMMAND: 'ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes',
-        GIT_TERMINAL_PROMPT: '0'
-      }
-    });
+    // Set GIT_SSH_COMMAND to auto-accept new host keys for SSH remotes
+    const isSSH = origin.startsWith('git@') || origin.startsWith('ssh://');
+    const env = isSSH 
+      ? { ...process.env, GIT_SSH_COMMAND: 'ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes' }
+      : process.env;
+    
+    await run('git', ['clone', origin, targetPath], { env });
     onProgress({ folderName, step: 'clone', status: 'ok', detail: origin });
   } catch (e) {
-    onProgress({ folderName, step: 'clone', status: 'error', detail: e.message });
+    // Clone failed - write instructions for manual cloning
+    const instructions = 
+      `# Manual restore needed\n` +
+      `# Original path: ${originalPath}\n` +
+      `# Remote: ${origin}\n` +
+      (isSSH 
+        ? `# Run: git clone ${origin} ${targetPath}\n`
+        : `# Ensure credentials are available, then run: git clone ${origin} ${targetPath}\n`);
+    fs.writeFileSync(path.join(repoBackupDir, '.restore-instructions.txt'), instructions);
+    onProgress({ folderName, step: 'clone', status: 'error', detail: 'auth required - see .restore-instructions.txt' });
     return { restored: false, hadChanges: !!hasChanges, hadUnpushedCommits: !!hasUnpushedCommits, skipped: false };
   }
 
