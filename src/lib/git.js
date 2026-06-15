@@ -141,6 +141,26 @@ export async function backupRepo(repoPath, dest, root) {
     hasUnpushedCommits = unpushedLog.trim().length > 0;
   } catch {}
 
+  // --- check if remote is reachable (async, may be slow on unreachable hosts) ---
+  let remoteReachable = false;
+  const origin = remotes.origin || Object.values(remotes)[0] || '';
+  if (origin) {
+    try {
+      await run('git', ['-C', repoPath, 'ls-remote', '--exit-code', '--heads', origin],
+        { 
+          stdio: ['pipe', 'pipe', 'pipe'],
+          env: {
+            ...process.env,
+            GIT_TERMINAL_PROMPT: '0',
+            GIT_SSH_COMMAND: 'ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=5',
+          }
+        });
+      remoteReachable = true;
+    } catch {
+      remoteReachable = false;
+    }
+  }
+
   // --- bundle (potentially slow: async so Ctrl+C works, stdio piped to suppress output) ---
   if (hasUnpushedCommits) {
     const bundleFile = path.join(outDir, 'local-commits.bundle');
@@ -152,14 +172,25 @@ export async function backupRepo(repoPath, dest, root) {
     }
   }
 
+  // --- tar.gz fallback when remote is unreachable ---
+  if (!remoteReachable) {
+    const tarFile = path.join(outDir, 'repo.tar.gz');
+    try {
+      await run('tar', ['-czf', tarFile, '-C', path.dirname(repoPath), '--exclude=.git/objects/pack/*.idx', path.basename(repoPath)],
+        { stdio: ['pipe', 'pipe', 'pipe'] });
+    } catch {
+      // tar failed — backup will be incomplete but meta.json still written
+    }
+  }
+
   // --- write files ---
-  const meta = { path: repoPath, remotes, branch, hasChanges, hasUnpushedCommits };
+  const meta = { path: repoPath, remotes, branch, hasChanges, hasUnpushedCommits, remoteReachable };
   fs.writeFileSync(path.join(outDir, 'meta.json'), JSON.stringify(meta, null, 2));
   if (hasChanges) {
     fs.writeFileSync(path.join(outDir, 'changes.patch'), patch);
   }
 
-  return { folderName, hasChanges, hasUnpushedCommits, remoteCount: Object.keys(remotes).length };
+  return { folderName, hasChanges, hasUnpushedCommits, remoteReachable, remoteCount: Object.keys(remotes).length };
 }
 
 /**
@@ -207,13 +238,32 @@ export async function restoreRepo(repoBackupDir, targetRoot, onProgress = () => 
     return { restored: false, skipped: true, reason: 'meta.json missing' };
   }
 
-  const { path: originalPath, remotes, hasChanges, hasUnpushedCommits } = meta;
+  const { path: originalPath, remotes, hasChanges, hasUnpushedCommits, remoteReachable } = meta;
   const folderName = path.basename(repoBackupDir);
 
   const targetPath = originalPath;
   const origin = remotes.origin || Object.values(remotes)[0] || '';
   const bundleFile = path.join(repoBackupDir, 'local-commits.bundle');
   const patchFile = path.join(repoBackupDir, 'changes.patch');
+  const tarFile = path.join(repoBackupDir, 'repo.tar.gz');
+
+  // --- tar.gz fallback for repos whose remote was unreachable at backup time ---
+  if (remoteReachable === false && fs.existsSync(tarFile)) {
+    if (fs.existsSync(targetPath)) {
+      onProgress({ folderName, step: 'untar', status: 'skip', detail: 'already exists' });
+    } else {
+      try {
+        fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+        await run('tar', ['-xzf', tarFile, '-C', path.dirname(targetPath)],
+          { stdio: ['pipe', 'pipe', 'pipe'] });
+        onProgress({ folderName, step: 'untar', status: 'ok', detail: tarFile });
+      } catch (e) {
+        onProgress({ folderName, step: 'untar', status: 'error', detail: e.message });
+        return { restored: false, hadChanges: !!hasChanges, hadUnpushedCommits: !!hasUnpushedCommits, skipped: false };
+      }
+    }
+    return { restored: true, hadChanges: !!hasChanges, hadUnpushedCommits: !!hasUnpushedCommits, skipped: false };
+  }
 
   if (!origin) {
     const instructions =

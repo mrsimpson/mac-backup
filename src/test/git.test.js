@@ -332,16 +332,52 @@ describe('restoreRepo', () => {
     expect(steps.some(s => s.step === 'clone' && s.status === 'skip')).toBe(true);
   });
 
-  it('returns skipped result when meta.json is missing', async () => {
+  it('untars repo.tar.gz when remoteReachable is false', async () => {
     const backupDir = makeTmpDir();
-    // No meta.json written — simulate missing
+    const tarFile = path.join(backupDir, 'repo.tar.gz');
+    fs.writeFileSync(tarFile, 'fake tar data');
+    const targetDir = path.join(makeTmpDir(), 'archived-repo'); // non-existent subdir
+    fs.writeFileSync(path.join(backupDir, 'meta.json'), JSON.stringify({
+      path: targetDir,
+      remotes: { origin: 'https://github.com/org/deleted-repo.git' },
+      branch: 'main',
+      hasChanges: false,
+      hasUnpushedCommits: false,
+      remoteReachable: false,
+    }));
 
     const steps = [];
     const result = await restoreRepo(backupDir, '/home/user/projects', (s) => steps.push(s));
 
-    expect(result.restored).toBe(false);
-    expect(result.skipped).toBe(true);
-    expect(result.reason).toBe('meta.json missing');
-    expect(steps.some(s => s.step === 'read-meta' && s.status === 'error')).toBe(true);
+    const spawnCalls = mockSpawn.mock.calls;
+    const tarCall = spawnCalls.find(([cmd]) => cmd === 'tar');
+    expect(tarCall).toBeDefined();
+    expect(tarCall[1]).toContain('-xzf');
+    expect(spawnCalls.every(([cmd, args]) => !(cmd === 'git' && Array.isArray(args) && args.includes('clone')))).toBe(true);
+    expect(steps.some(s => s.step === 'untar' && s.status === 'ok')).toBe(true);
+    expect(result.restored).toBe(true);
+  });
+
+  it('skips untar if target directory already exists', async () => {
+    const backupDir = makeTmpDir();
+    const targetDir = makeTmpDir(); // simulate already-restored dir
+    const tarFile = path.join(backupDir, 'repo.tar.gz');
+    fs.writeFileSync(tarFile, 'fake tar data');
+    fs.writeFileSync(path.join(backupDir, 'meta.json'), JSON.stringify({
+      path: targetDir,
+      remotes: { origin: 'https://github.com/org/deleted-repo.git' },
+      branch: 'main',
+      hasChanges: false,
+      hasUnpushedCommits: false,
+      remoteReachable: false,
+    }));
+
+    const steps = [];
+    const result = await restoreRepo(backupDir, '/home/user/projects', (s) => steps.push(s));
+
+    expect(steps.some(s => s.step === 'untar' && s.status === 'skip')).toBe(true);
+    expect(result.restored).toBe(true);
   });
 });
+
+
