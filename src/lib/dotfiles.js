@@ -104,11 +104,17 @@ export async function restoreDotfiles(dest, homeDir) {
       const keyPath = path.join(sshDir, key);
       try {
         // --apple-use-keychain: store/retrieve passphrase from macOS Keychain
-        // -q: quiet, no passphrase prompt — silently skip keys that need one
         await run('ssh-add', ['--apple-use-keychain', keyPath], 
           { stdio: ['ignore', 'ignore', 'ignore'] });
       } catch {
-        // Key needs passphrase not in keychain or agent not running — skip silently
+        // Throw a descriptive error so the caller can stop restore and inform the user
+        const err = new Error(
+          `Could not add SSH key ${key} to agent.\n` +
+          `Run manually: ssh-add --apple-use-keychain ~/.ssh/${key}\n` +
+          `Then re-run the restore.`
+        );
+        err.sshKey = keyPath;
+        throw err;
       }
     }
   }
