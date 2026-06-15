@@ -62,6 +62,11 @@ export async function runRestore() {
       await runStep('Homebrew packages', () => restoreBrew(dest));
     }
 
+    // Restore dotfiles first - this includes SSH keys needed for git clones
+    if (available.includes('dotfiles')) {
+      await runStep('Dotfiles', () => restoreDotfiles(dest, home));
+    }
+
     if (available.includes('git')) {
       const gitBackupDir = path.join(dest, 'git');
       const repoDirs = fs.readdirSync(gitBackupDir, { withFileTypes: true })
@@ -121,10 +126,6 @@ export async function runRestore() {
       if (skippedCount > 0) parts.push(`${skippedCount} skipped`);
       if (errorCount > 0) parts.push(`${errorCount} errors`);
       gitSpinner.stop(`Git repos: ${parts.join(', ')} ✓`);
-    }
-
-    if (available.includes('dotfiles')) {
-      await runStep('Dotfiles', () => restoreDotfiles(dest, home));
     }
 
     p.outro(`Restore complete${dryRunSuffix}`);
