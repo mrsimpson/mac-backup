@@ -39,15 +39,29 @@ export function run(cmd, args, opts = {}) {
     return Promise.resolve();
   }
 
-  const { allowedExitCodes = [], ...spawnOpts } = opts;
+  const { allowedExitCodes = [], timeout, ...spawnOpts } = opts;
 
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { stdio: 'inherit', ...spawnOpts });
 
-    child.on('error', reject);
+    let timer;
+    if (timeout) {
+      timer = setTimeout(() => {
+        child.kill();
+        const err = new Error(`${cmd} timed out after ${timeout}ms`);
+        err.timedOut = true;
+        reject(err);
+      }, timeout);
+    }
+
+    child.on('error', (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
 
     child.on('close', (code, signal) => {
-      if (signal) {
+      clearTimeout(timer);
+      if (signal && signal !== 'SIGTERM') {
         const err = new Error(`${cmd} killed by signal ${signal}`);
         err.signal = signal;
         reject(err);

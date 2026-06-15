@@ -149,6 +149,7 @@ export async function backupRepo(repoPath, dest, root) {
       await run('git', ['-C', repoPath, 'ls-remote', '--exit-code', '--heads', origin],
         { 
           stdio: ['pipe', 'pipe', 'pipe'],
+          timeout: 8000, // 8s hard timeout — HTTPS hosts can hang on TCP connect otherwise
           env: {
             ...process.env,
             GIT_TERMINAL_PROMPT: '0',
