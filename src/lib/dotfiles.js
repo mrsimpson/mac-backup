@@ -67,7 +67,9 @@ export async function backupDotfiles(paths, homeDir, dest) {
     // stderr is piped away: rsync prints "skipping non-regular file" warnings for
     // remaining sockets/pipes; those are harmless and exit code stays 0.
     await run('rsync', ['-rlptgo', '--delete', src, dst],
-      { stdio: ['inherit', 'inherit', 'pipe'] });
+      // exit code 23 = partial transfer due to skipped special files (sockets, pipes)
+      // these can't be stored on cloud-synced destinations like OneDrive — harmless
+      { stdio: ['inherit', 'inherit', 'pipe'], allowedExitCodes: [23] });
   }
 }
 
@@ -87,7 +89,9 @@ export async function restoreDotfiles(dest, homeDir, onProgress = () => {}) {
     const fullEntry = path.join(dotfilesDir, entry);
     // Same flag rationale as backupDotfiles: -rlptgo avoids -D/--specials
     await run('rsync', ['-rlptgo', '--delete', fullEntry, homeDir + '/'],
-      { stdio: ['inherit', 'inherit', 'pipe'] });
+      // exit code 23 = partial transfer due to skipped special files (sockets, pipes)
+      // these can't be stored on cloud-synced destinations like OneDrive — harmless
+      { stdio: ['inherit', 'inherit', 'pipe'], allowedExitCodes: [23] });
     onProgress({ name: entry, step: 'rsync', status: 'ok' });
   }
 

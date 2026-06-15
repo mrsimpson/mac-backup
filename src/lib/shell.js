@@ -39,8 +39,10 @@ export function run(cmd, args, opts = {}) {
     return Promise.resolve();
   }
 
+  const { allowedExitCodes = [], ...spawnOpts } = opts;
+
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: 'inherit', ...opts });
+    const child = spawn(cmd, args, { stdio: 'inherit', ...spawnOpts });
 
     child.on('error', reject);
 
@@ -49,7 +51,7 @@ export function run(cmd, args, opts = {}) {
         const err = new Error(`${cmd} killed by signal ${signal}`);
         err.signal = signal;
         reject(err);
-      } else if (code !== 0) {
+      } else if (code !== 0 && !allowedExitCodes.includes(code)) {
         const err = new Error(`${cmd} exited with code ${code}`);
         err.exitCode = code;
         reject(err);
