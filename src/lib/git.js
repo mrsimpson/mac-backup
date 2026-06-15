@@ -230,31 +230,37 @@ export async function restoreRepo(repoBackupDir, targetRoot, onProgress = () => 
 
 // --- clone ---
   const isSSH = origin.startsWith('git@') || origin.startsWith('ssh://');
-  try {
-    const env = {
-      ...process.env,
-      // Disable interactive credential prompts for HTTPS — fail fast instead of stalling
-      GIT_TERMINAL_PROMPT: '0',
-      // Auto-accept unknown SSH host keys on new machines
-      ...(isSSH && { GIT_SSH_COMMAND: 'ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes' }),
-    };
 
-    await run('git', ['clone', origin, targetPath], { env });
-    onProgress({ folderName, step: 'clone', status: 'ok', detail: origin });
-  } catch (e) {
-    const instructions =
-      `# Manual restore needed\n` +
-      `# Original path: ${originalPath}\n` +
-      `# Remote: ${origin}\n` +
-      (isSSH
-        ? `# Ensure your SSH key is loaded: ssh-add ~/.ssh/id_ed25519\n`
-        : `# Ensure credentials are configured: git config --global credential.helper osxkeychain\n`) +
-      `# Then run: git clone ${origin} ${targetPath}\n`;
-    fs.writeFileSync(path.join(repoBackupDir, '.restore-instructions.txt'), instructions);
-    const hint = isSSH ? 'SSH key missing or not loaded' : 'credentials required';
-    const err = new Error(`clone failed for ${folderName}: ${hint}\nRun: git clone ${origin} ${targetPath}\nThen re-run restore.`);
-    err.restoreInstructions = instructions;
-    throw err;
+  // Skip clone if the target directory already exists (re-running after a previous partial restore)
+  if (fs.existsSync(targetPath)) {
+    onProgress({ folderName, step: 'clone', status: 'skip', detail: 'already exists' });
+  } else {
+    try {
+      const env = {
+        ...process.env,
+        // Disable interactive credential prompts for HTTPS — fail fast instead of stalling
+        GIT_TERMINAL_PROMPT: '0',
+        // Auto-accept unknown SSH host keys on new machines
+        ...(isSSH && { GIT_SSH_COMMAND: 'ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes' }),
+      };
+
+      await run('git', ['clone', origin, targetPath], { env });
+      onProgress({ folderName, step: 'clone', status: 'ok', detail: origin });
+    } catch (e) {
+      const instructions =
+        `# Manual restore needed\n` +
+        `# Original path: ${originalPath}\n` +
+        `# Remote: ${origin}\n` +
+        (isSSH
+          ? `# Ensure your SSH key is loaded: ssh-add ~/.ssh/id_ed25519\n`
+          : `# Ensure credentials are configured: git config --global credential.helper osxkeychain\n`) +
+        `# Then run: git clone ${origin} ${targetPath}\n`;
+      fs.writeFileSync(path.join(repoBackupDir, '.restore-instructions.txt'), instructions);
+      const hint = isSSH ? 'SSH key missing or not loaded' : 'credentials required';
+      const err = new Error(`clone failed for ${folderName}: ${hint}\nRun: git clone ${origin} ${targetPath}\nThen re-run restore.`);
+      err.restoreInstructions = instructions;
+      throw err;
+    }
   }
 
   // --- unbundle local commits ---
