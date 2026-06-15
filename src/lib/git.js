@@ -252,8 +252,9 @@ export async function restoreRepo(repoBackupDir, targetRoot, onProgress = () => 
       `# Then run: git clone ${origin} ${targetPath}\n`;
     fs.writeFileSync(path.join(repoBackupDir, '.restore-instructions.txt'), instructions);
     const hint = isSSH ? 'SSH key missing or not loaded' : 'credentials required';
-    onProgress({ folderName, step: 'clone', status: 'error', detail: `${hint} — see .restore-instructions.txt` });
-    return { restored: false, hadChanges: !!hasChanges, hadUnpushedCommits: !!hasUnpushedCommits, skipped: false };
+    const err = new Error(`clone failed for ${folderName}: ${hint}\nRun: git clone ${origin} ${targetPath}\nThen re-run restore.`);
+    err.restoreInstructions = instructions;
+    throw err;
   }
 
   // --- unbundle local commits ---

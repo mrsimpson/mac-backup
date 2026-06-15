@@ -122,26 +122,22 @@ export async function runRestore() {
 
         try {
           const result = await restoreRepo(repoDir, home, ({ folderName: fn, step, status, detail }) => {
-            // Build per-step badge
             const statusIcon = status === 'ok' ? '✓' : status === 'skip' ? '–' : '✗';
             const stepStr = step === 'read-meta' ? 'meta' : step;
             const detailStr = detail ? ` ${detail}` : '';
-            // Only log non-skip steps that actually did something
             if (status !== 'skip') {
               p.log.step(`  ${shortName}: ${stepStr} ${statusIcon}${detailStr}`);
             }
           });
 
-          if (result.restored) {
-            restoredCount++;
-          } else if (result.skipped) {
-            skippedCount++;
-          } else {
-            errorCount++;
-          }
+          if (result.restored) restoredCount++;
+          else if (result.skipped) skippedCount++;
+          else errorCount++;
         } catch (e) {
-          p.log.step(`${shortName} [restore error: ${e.message}]`);
-          errorCount++;
+          gitSpinner.stop(`Git repos: ${restoredCount} restored, ${skippedCount} skipped, ${errorCount} errors`);
+          p.log.error(e.message);
+          p.outro('Restore stopped. Fix the issue above and re-run restore.');
+          process.exit(1);
         }
 
         gitSpinner.message(`Git repos — ${index + 1}/${repoDirs.length}`);
