@@ -94,39 +94,72 @@ export async function restoreDotfiles(dest, homeDir, onProgress = () => {}) {
       { stdio: ['inherit', 'inherit', 'pipe'], allowedExitCodes: [23] });
     onProgress({ name: entry, step: 'rsync', status: 'ok' });
   }
+}
 
-  // Add restored SSH keys to the agent using --apple-use-keychain
-  // to avoid passphrase prompts blocking the restore flow.
+/**
+ * Returns true if the file looks like an OpenSSH private key.
+ * Reads only the first line to check the header.
+ */
+function isOpenSshKey(filePath) {
+  try {
+    const fd = fs.openSync(filePath, 'r');
+    const buf = Buffer.alloc(64);
+    const bytesRead = fs.readSync(fd, buf, 0, 64, 0);
+    fs.closeSync(fd);
+    const header = buf.slice(0, bytesRead).toString('utf8');
+    return header.startsWith('-----BEGIN OPENSSH PRIVATE KEY-----') ||
+           header.startsWith('-----BEGIN RSA PRIVATE KEY-----') ||
+           header.startsWith('-----BEGIN EC PRIVATE KEY-----') ||
+           header.startsWith('-----BEGIN DSA PRIVATE KEY-----');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Adds SSH private keys from homeDir/.ssh to the SSH agent.
+ *
+ * @param {string}   homeDir     - Home directory containing .ssh/.
+ * @param {Function} [onProgress] - Called per key with { name, step, status, detail? }
+ * @returns {Promise<void>}
+ */
+export async function addSshKeysToAgent(homeDir, onProgress = () => {}) {
   const sshDir = path.join(homeDir, '.ssh');
-  if (fs.existsSync(sshDir)) {
-    const files = fs.readdirSync(sshDir);
-    const privateKeys = files.filter(f => 
-      !f.endsWith('.pub') &&           // public keys
-      !f.startsWith('S.') &&           // sockets (S.gpg-agent, etc.) — runtime, not transferable
-      !f.includes('known_hosts') &&    // host fingerprint cache
-      !f.includes('config') &&         // ssh client config
-      !f.includes('environment') &&    // session environment
-      !f.includes('authorized_keys')   // server-side auth list
-    );
-    
-    for (const key of privateKeys) {
-      const keyPath = path.join(sshDir, key);
-      try {
-        // --apple-use-keychain: store/retrieve passphrase from macOS Keychain
-        await run('ssh-add', ['--apple-use-keychain', keyPath], 
-          { stdio: ['ignore', 'ignore', 'ignore'] });
-        onProgress({ name: key, step: 'ssh-add', status: 'ok' });
-      } catch {
-        // Throw a descriptive error so the caller can stop restore and inform the user
-        onProgress({ name: key, step: 'ssh-add', status: 'error' });
-        const err = new Error(
-          `Could not add SSH key ${key} to agent.\n` +
-          `Run manually: ssh-add --apple-use-keychain ~/.ssh/${key}\n` +
-          `Then re-run the restore.`
-        );
-        err.sshKey = keyPath;
-        throw err;
-      }
+  if (!fs.existsSync(sshDir)) return;
+
+  const files = fs.readdirSync(sshDir);
+  const candidates = files.filter(f =>
+    !f.endsWith('.pub') &&           // public keys
+    !f.startsWith('S.') &&           // sockets — runtime, not transferable
+    !f.includes('known_hosts') &&    // host fingerprint cache
+    !f.includes('config') &&         // ssh client config
+    !f.includes('environment') &&    // session environment
+    !f.includes('authorized_keys')   // server-side auth list
+  );
+
+  for (const key of candidates) {
+    const keyPath = path.join(sshDir, key);
+
+    // Skip non-OpenSSH key formats (e.g. .pem AWS keypairs, random files)
+    if (!isOpenSshKey(keyPath)) {
+      onProgress({ name: key, step: 'ssh-add', status: 'skip', detail: 'not an OpenSSH key' });
+      continue;
+    }
+
+    try {
+      // --apple-use-keychain: retrieve passphrase from macOS Keychain silently
+      await run('ssh-add', ['--apple-use-keychain', keyPath],
+        { stdio: ['ignore', 'ignore', 'ignore'] });
+      onProgress({ name: key, step: 'ssh-add', status: 'ok' });
+    } catch {
+      onProgress({ name: key, step: 'ssh-add', status: 'error' });
+      const err = new Error(
+        `Could not add SSH key ${key} to agent.\n` +
+        `Run manually: ssh-add --apple-use-keychain ~/.ssh/${key}\n` +
+        `Then re-run the restore.`
+      );
+      err.sshKey = keyPath;
+      throw err;
     }
   }
 }

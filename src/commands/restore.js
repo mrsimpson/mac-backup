@@ -1,7 +1,7 @@
 import * as p from '@clack/prompts';
 import { readConfig, defaultConfigPath } from '../lib/config.js';
 import { restoreBrew } from '../lib/brew.js';
-import { restoreDotfiles } from '../lib/dotfiles.js';
+import { restoreDotfiles, addSshKeysToAgent } from '../lib/dotfiles.js';
 import { restoreRepo } from '../lib/git.js';
 import fs from 'fs';
 import path from 'path';
@@ -74,6 +74,23 @@ export async function runRestore() {
       });
 
       dotfilesSpinner.stop('Dotfiles ✓');
+
+      // Add SSH keys to agent as a dedicated step so git clones can authenticate
+      const sshSpinner = p.spinner();
+      sshSpinner.start('SSH keys — adding to agent...');
+      let sshKeyCount = 0;
+
+      await addSshKeysToAgent(home, ({ name, step, status, detail }) => {
+        const icon = status === 'ok' ? '✓' : status === 'skip' ? '–' : '✗';
+        const detailStr = detail ? ` (${detail})` : '';
+        if (status !== 'skip') {
+          p.log.step(`  ${name}: ${step} ${icon}${detailStr}`);
+        }
+        if (status === 'ok') sshKeyCount++;
+        sshSpinner.message(`SSH keys — ${name}`);
+      });
+
+      sshSpinner.stop(`SSH keys: ${sshKeyCount} added ✓`);
     }
 
     if (available.includes('git')) {
