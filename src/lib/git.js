@@ -231,24 +231,28 @@ export async function restoreRepo(repoBackupDir, targetRoot, onProgress = () => 
 // --- clone ---
   const isSSH = origin.startsWith('git@') || origin.startsWith('ssh://');
   try {
-    // Set GIT_SSH_COMMAND to auto-accept new host keys for SSH remotes
-    const env = isSSH 
-      ? { ...process.env, GIT_SSH_COMMAND: 'ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes' }
-      : process.env;
-    
+    const env = {
+      ...process.env,
+      // Disable interactive credential prompts for HTTPS — fail fast instead of stalling
+      GIT_TERMINAL_PROMPT: '0',
+      // Auto-accept unknown SSH host keys on new machines
+      ...(isSSH && { GIT_SSH_COMMAND: 'ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes' }),
+    };
+
     await run('git', ['clone', origin, targetPath], { env });
     onProgress({ folderName, step: 'clone', status: 'ok', detail: origin });
   } catch (e) {
-    // Clone failed - write instructions for manual cloning
-    const instructions = 
+    const instructions =
       `# Manual restore needed\n` +
       `# Original path: ${originalPath}\n` +
       `# Remote: ${origin}\n` +
-      (isSSH 
-        ? `# Run: git clone ${origin} ${targetPath}\n`
-        : `# Ensure credentials are available, then run: git clone ${origin} ${targetPath}\n`);
+      (isSSH
+        ? `# Ensure your SSH key is loaded: ssh-add ~/.ssh/id_ed25519\n`
+        : `# Ensure credentials are configured: git config --global credential.helper osxkeychain\n`) +
+      `# Then run: git clone ${origin} ${targetPath}\n`;
     fs.writeFileSync(path.join(repoBackupDir, '.restore-instructions.txt'), instructions);
-    onProgress({ folderName, step: 'clone', status: 'error', detail: 'auth required - see .restore-instructions.txt' });
+    const hint = isSSH ? 'SSH key missing or not loaded' : 'credentials required';
+    onProgress({ folderName, step: 'clone', status: 'error', detail: `${hint} — see .restore-instructions.txt` });
     return { restored: false, hadChanges: !!hasChanges, hadUnpushedCommits: !!hasUnpushedCommits, skipped: false };
   }
 
