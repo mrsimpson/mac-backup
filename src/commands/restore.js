@@ -64,7 +64,16 @@ export async function runRestore() {
 
     // Restore dotfiles first - this includes SSH keys needed for git clones
     if (available.includes('dotfiles')) {
-      await runStep('Dotfiles', () => restoreDotfiles(dest, home));
+      const dotfilesSpinner = p.spinner();
+      dotfilesSpinner.start('Dotfiles — restoring...');
+
+      await restoreDotfiles(dest, home, ({ name, step, status }) => {
+        const icon = status === 'ok' ? '✓' : '✗';
+        p.log.step(`  ${name}: ${step} ${icon}`);
+        dotfilesSpinner.message(`Dotfiles — ${name}`);
+      });
+
+      dotfilesSpinner.stop('Dotfiles ✓');
     }
 
     if (available.includes('git')) {
