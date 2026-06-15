@@ -64,7 +64,19 @@ Ctrl+C stops immediately. Individual step failures are logged but don't abort th
 
 ### `restore`
 
-Shows what's available in the backup destination, asks for confirmation, then restores each category. Git restore: clones from origin, re-imports local branches from the bundle, applies the dirty-state patch.
+Shows what's available in the backup destination, asks for confirmation, then restores in this order:
+
+1. **Homebrew** — `brew bundle install` from the saved Brewfile
+2. **Dotfiles** — rsync back to `~/`, then runs `ssh-add` on all valid OpenSSH private keys using the macOS Keychain for passphrases
+3. **Git repos** — clones from origin, re-imports local bundles, applies dirty-state patch
+
+Dotfiles are restored before git repos so SSH keys are available when cloning private repos. Non-OpenSSH files (`.pem`, sockets, `known_hosts`) are skipped. If a key needs a passphrase not in the Keychain, restore stops with instructions to add it manually.
+
+For private HTTPS repos, configure a credential helper before running restore:
+
+```sh
+git config --global credential.helper osxkeychain
+```
 
 ## What it doesn't back up
 
