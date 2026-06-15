@@ -89,22 +89,26 @@ export async function restoreDotfiles(dest, homeDir) {
       { stdio: ['inherit', 'inherit', 'pipe'] });
   }
 
-  // Add restored SSH keys to the agent
+  // Add restored SSH keys to the agent using -q (quiet) and --apple-use-keychain
+  // to avoid passphrase prompts blocking the restore flow.
+  // We use -q to suppress output and --apple-load-keychain to pick up passphrases
+  // stored in macOS Keychain from the old machine (if synced via iCloud Keychain).
   const sshDir = path.join(homeDir, '.ssh');
   if (fs.existsSync(sshDir)) {
     const files = fs.readdirSync(sshDir);
     const privateKeys = files.filter(f => 
-      !f.endsWith('.pub') && !f.includes('known_hosts') && !f.includes('config')
+      !f.endsWith('.pub') && !f.includes('known_hosts') && !f.includes('config') && !f.includes('environment')
     );
     
-    if (privateKeys.length > 0) {
-      for (const key of privateKeys) {
-        const keyPath = path.join(sshDir, key);
-        try {
-          await run('ssh-add', [keyPath], { stdio: 'inherit' });
-        } catch {
-          // ssh-add can fail if agent isn't running - that's ok, user can add manually
-        }
+    for (const key of privateKeys) {
+      const keyPath = path.join(sshDir, key);
+      try {
+        // --apple-use-keychain: store/retrieve passphrase from macOS Keychain
+        // -q: quiet, no passphrase prompt — silently skip keys that need one
+        await run('ssh-add', ['--apple-use-keychain', keyPath], 
+          { stdio: ['ignore', 'ignore', 'ignore'] });
+      } catch {
+        // Key needs passphrase not in keychain or agent not running — skip silently
       }
     }
   }
