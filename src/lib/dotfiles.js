@@ -64,9 +64,12 @@ export async function backupDotfiles(paths, homeDir, dest) {
     // -D causes openrsync to try copying socket files (e.g. ~/.gnupg/S.gpg-agent)
     // which fails with "mkstempsock: Invalid argument" on cloud-synced destinations
     // like OneDrive that don't support special files.
-    // stderr is piped away: rsync prints "skipping non-regular file" warnings for
-    // remaining sockets/pipes; those are harmless and exit code stays 0.
-    await run('rsync', ['-rlptgo', '--delete', src, dst],
+    // --exclude='sockets/' and --filter='- S *' explicitly skip socket files
+    // so OneDrive doesn't SIGKILL rsync when it encounters them.
+    await run('rsync', ['-rlptgo', '--delete',
+      '--filter=- S *',       // skip socket files (type S in rsync filter rules)
+      '--exclude=sockets/',   // skip iterm2/gnupg socket directories by name
+      src, dst],
       // exit code 23 = partial transfer due to skipped special files (sockets, pipes)
       // these can't be stored on cloud-synced destinations like OneDrive — harmless
       { stdio: ['inherit', 'inherit', 'pipe'], allowedExitCodes: [23] });
@@ -88,9 +91,11 @@ export async function restoreDotfiles(dest, homeDir, onProgress = () => {}) {
   for (const entry of entries) {
     const fullEntry = path.join(dotfilesDir, entry);
     // Same flag rationale as backupDotfiles: -rlptgo avoids -D/--specials
-    await run('rsync', ['-rlptgo', '--delete', fullEntry, homeDir + '/'],
+    await run('rsync', ['-rlptgo', '--delete',
+      '--filter=- S *',
+      '--exclude=sockets/',
+      fullEntry, homeDir + '/'],
       // exit code 23 = partial transfer due to skipped special files (sockets, pipes)
-      // these can't be stored on cloud-synced destinations like OneDrive — harmless
       { stdio: ['inherit', 'inherit', 'pipe'], allowedExitCodes: [23] });
     onProgress({ name: entry, step: 'rsync', status: 'ok' });
   }
