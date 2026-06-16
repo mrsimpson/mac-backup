@@ -112,21 +112,27 @@ export async function backupRepo(repoPath, dest, root) {
     statusOutput = runSync(`git -C ${q(repoPath)} status --porcelain`, syncOpts);
   } catch {}
   
-  // Only consider tracked file modifications as "changes" - untracked files (?? don't need a patch
-  const modifiedOutput = statusOutput.split('\n').filter(line => 
-    line.trim() && !line.startsWith('??')
-  ).join('\n');
+  // Only consider tracked file modifications as "changes" - untracked files (??) don't need a patch,
+  // and binary macOS metadata files (.DS_Store etc.) can't be applied on a new machine.
+  const IGNORED_CHANGE_PATTERNS = ['.DS_Store', '.Spotlight-V100', '.Trashes'];
+  const modifiedOutput = statusOutput.split('\n').filter(line => {
+    if (!line.trim() || line.startsWith('??')) return false;
+    return !IGNORED_CHANGE_PATTERNS.some(p => line.includes(p));
+  }).join('\n');
   
   const hasChanges = modifiedOutput.length > 0;
 
   // --- diff patch (fast, sync) ---
+  // Exclude binary macOS metadata files that can't be applied on a new machine
+  // and would cause git apply to fail.
+  const PATCH_EXCLUDE = ['*.DS_Store', '*.Spotlight-V100', '*.Trashes'];
   let patch = '';
   if (hasChanges) {
     try {
-      patch = runSync(`git -C ${q(repoPath)} diff HEAD`, syncOpts);
+      patch = runSync(`git -C ${q(repoPath)} diff HEAD -- ${PATCH_EXCLUDE.map(p => `':!${p}'`).join(' ')}`, syncOpts);
     } catch {
       try {
-        patch = runSync(`git -C ${q(repoPath)} diff`, syncOpts);
+        patch = runSync(`git -C ${q(repoPath)} diff -- ${PATCH_EXCLUDE.map(p => `':!${p}'`).join(' ')}`, syncOpts);
       } catch {}
     }
   }
