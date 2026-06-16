@@ -69,7 +69,9 @@ export async function runRestore() {
 
   try {
     if (toRestore.includes('homebrew')) {
-      await runStep('Homebrew packages', () => restoreBrew(dest));
+      p.log.step('Homebrew packages — installing (this may take a while)...');
+      await restoreBrew(dest);
+      p.log.step('Homebrew packages ✓');
     }
 
     // Restore dotfiles first - this includes SSH keys needed for git clones
