@@ -44,6 +44,12 @@ export async function runBackup() {
     // Brew — always run
     await runStep('Homebrew packages', () => backupBrew(dest));
 
+    // Dotfiles — run when DOTFILES_PATHS is configured and non-empty
+    const dotfilesPaths = (config.DOTFILES_PATHS || '').split(' ').filter(Boolean);
+    if (dotfilesPaths.length > 0) {
+      await runStep('Dotfiles', () => backupDotfiles(dotfilesPaths, home, dest));
+    }
+
     // Git — run when GIT_ROOT is configured
     if (config.GIT_ROOT) {
       const gitSpinner = p.spinner();
@@ -70,12 +76,6 @@ export async function runBackup() {
         gitSpinner.stop(`Git repos failed: ${e.message}`);
         if (e.signal === 'SIGINT') throw e;
       }
-    }
-
-    // Dotfiles — run when DOTFILES_PATHS is configured and non-empty
-    const dotfilesPaths = (config.DOTFILES_PATHS || '').split(' ').filter(Boolean);
-    if (dotfilesPaths.length > 0) {
-      await runStep('Dotfiles', () => backupDotfiles(dotfilesPaths, home, dest));
     }
 
     p.outro(`Backup complete → ${dest}${dryRunSuffix}`);
