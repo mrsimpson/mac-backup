@@ -86,10 +86,32 @@ export async function backupDotfiles(paths, homeDir, dest) {
  */
 export async function restoreDotfiles(dest, homeDir, onProgress = () => {}) {
   const dotfilesDir = path.join(dest, 'dotfiles');
-  const entries = fs.readdirSync(dotfilesDir);
+  // Filter out OneDrive conflict copies (e.g. ".ssh 1", ".ssh 2") — these are
+  // duplicates created by OneDrive when a file/dir was written while syncing and
+  // should never be restored to the home directory.
+  const entries = fs.readdirSync(dotfilesDir)
+    .filter(e => !/\s\d+$/.test(e));
 
   for (const entry of entries) {
     const fullEntry = path.join(dotfilesDir, entry);
+    const destEntry = path.join(homeDir, entry);
+
+    // If the backup source is a directory but the destination path exists as a
+    // plain file (e.g. left behind by a previous broken restore or an OneDrive
+    // conflict copy), rsync will fail with ENOTDIR. Remove the stale file first.
+    try {
+      const srcStat = fs.statSync(fullEntry);
+      if (srcStat.isDirectory()) {
+        const dstStat = fs.existsSync(destEntry) && fs.statSync(destEntry);
+        if (dstStat && !dstStat.isDirectory()) {
+          fs.rmSync(destEntry);
+          onProgress({ name: entry, step: 'cleanup', status: 'ok', detail: 'removed stale file at destination' });
+        }
+      }
+    } catch {
+      // stat failure is non-fatal — let rsync surface the real error
+    }
+
     // Same flag rationale as backupDotfiles: -rlptgo avoids -D/--specials
     await run('rsync', ['-rlptgo', '--delete',
       '--filter=- S *',
