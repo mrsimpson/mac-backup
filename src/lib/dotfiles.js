@@ -96,16 +96,21 @@ export async function restoreDotfiles(dest, homeDir, onProgress = () => {}) {
     const fullEntry = path.join(dotfilesDir, entry);
     const destEntry = path.join(homeDir, entry);
 
-    // If the backup source is a directory but the destination path exists as a
-    // plain file (e.g. left behind by a previous broken restore or an OneDrive
-    // conflict copy), rsync will fail with ENOTDIR. Remove the stale file first.
+    // If the backup source is a real directory (not a symlink) but the destination
+    // path exists as a plain file (e.g. left behind by a previous broken restore or
+    // an OneDrive conflict copy), rsync will fail with ENOTDIR. Remove the stale
+    // file first. Use lstatSync so symlinks in the backup are never mistaken for
+    // directories and never trigger this cleanup.
     try {
-      const srcStat = fs.statSync(fullEntry);
+      const srcStat = fs.lstatSync(fullEntry);
       if (srcStat.isDirectory()) {
-        const dstStat = fs.existsSync(destEntry) && fs.statSync(destEntry);
-        if (dstStat && !dstStat.isDirectory()) {
-          fs.rmSync(destEntry);
-          onProgress({ name: entry, step: 'cleanup', status: 'ok', detail: 'removed stale file at destination' });
+        const dstExists = fs.existsSync(destEntry);
+        if (dstExists) {
+          const dstStat = fs.lstatSync(destEntry);
+          if (!dstStat.isDirectory()) {
+            fs.rmSync(destEntry);
+            onProgress({ name: entry, step: 'cleanup', status: 'ok', detail: 'removed stale file at destination' });
+          }
         }
       }
     } catch {
