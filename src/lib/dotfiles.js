@@ -96,25 +96,45 @@ export async function restoreDotfiles(dest, homeDir, onProgress = () => {}) {
     const fullEntry = path.join(dotfilesDir, entry);
     const destEntry = path.join(homeDir, entry);
 
-    // If the backup source is a real directory (not a symlink) but the destination
-    // path exists as a plain file (e.g. left behind by a previous broken restore or
-    // an OneDrive conflict copy), rsync will fail with ENOTDIR. Remove the stale
-    // file first. Use lstatSync so symlinks in the backup are never mistaken for
-    // directories and never trigger this cleanup.
+    let srcStat;
     try {
-      const srcStat = fs.lstatSync(fullEntry);
-      if (srcStat.isDirectory()) {
-        const dstExists = fs.existsSync(destEntry);
-        if (dstExists) {
-          const dstStat = fs.lstatSync(destEntry);
-          if (!dstStat.isDirectory()) {
-            fs.rmSync(destEntry);
-            onProgress({ name: entry, step: 'cleanup', status: 'ok', detail: 'removed stale file at destination' });
-          }
-        }
-      }
+      srcStat = fs.lstatSync(fullEntry);
     } catch {
-      // stat failure is non-fatal — let rsync surface the real error
+      onProgress({ name: entry, step: 'stat', status: 'error', detail: 'could not stat backup entry' });
+      continue;
+    }
+
+    // Symlinks in the backup (e.g. .ssh -> /Users/.../SynologyDrive/dotfiles/.ssh)
+    // must be recreated as symlinks — openrsync on macOS writes the target path as
+    // a plain text file instead of creating a proper symlink.
+    if (srcStat.isSymbolicLink()) {
+      const target = fs.readlinkSync(fullEntry);
+      try {
+        // Remove whatever is already at the destination so we can (re)create it
+        if (fs.existsSync(destEntry) || fs.lstatSync(destEntry)) {
+          fs.rmSync(destEntry, { recursive: true, force: true });
+        }
+      } catch {
+        // destination doesn't exist — that's fine
+      }
+      fs.symlinkSync(target, destEntry);
+      onProgress({ name: entry, step: 'symlink', status: 'ok', detail: `-> ${target}` });
+      continue;
+    }
+
+    // If the backup source is a real directory but the destination path exists as a
+    // plain file (e.g. left behind by a previous broken restore or an OneDrive
+    // conflict copy), rsync will fail with ENOTDIR. Remove the stale file first.
+    if (srcStat.isDirectory()) {
+      try {
+        const dstStat = fs.lstatSync(destEntry);
+        if (!dstStat.isDirectory()) {
+          fs.rmSync(destEntry);
+          onProgress({ name: entry, step: 'cleanup', status: 'ok', detail: 'removed stale file at destination' });
+        }
+      } catch {
+        // destination doesn't exist — fine
+      }
     }
 
     // Same flag rationale as backupDotfiles: -rlptgo avoids -D/--specials

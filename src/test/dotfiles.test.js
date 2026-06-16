@@ -184,4 +184,63 @@ describe('restoreDotfiles', () => {
     const calls = mockSpawn.mock.calls;
     expect(calls.every(([cmd]) => cmd !== 'gpg')).toBe(true);
   });
+
+  it('recreates symlinks from backup without calling rsync for them', async () => {
+    const dest = makeTmpDir();
+    const home = makeTmpDir();
+    const dotfilesDir = path.join(dest, 'dotfiles');
+    fs.mkdirSync(dotfilesDir, { recursive: true });
+
+    // Simulate a symlink in the backup (e.g. .ssh -> /Users/.../SynologyDrive/dotfiles/.ssh)
+    const symlinkTarget = '/Users/oliverjaegle/SynologyDrive/dotfiles/.ssh';
+    fs.symlinkSync(symlinkTarget, path.join(dotfilesDir, '.ssh'));
+
+    const progress = [];
+    await restoreDotfiles(dest, home, (evt) => progress.push(evt));
+
+    // rsync must NOT be called for the symlink entry
+    expect(mockSpawn).not.toHaveBeenCalled();
+
+    // The symlink must be recreated at the destination
+    const destLink = path.join(home, '.ssh');
+    const destStat = fs.lstatSync(destLink);
+    expect(destStat.isSymbolicLink()).toBe(true);
+    expect(fs.readlinkSync(destLink)).toBe(symlinkTarget);
+
+    // Progress reported with step 'symlink'
+    expect(progress.some(e => e.step === 'symlink' && e.status === 'ok')).toBe(true);
+  });
+
+  it('overwrites a stale symlink at destination with the backup symlink', async () => {
+    const dest = makeTmpDir();
+    const home = makeTmpDir();
+    const dotfilesDir = path.join(dest, 'dotfiles');
+    fs.mkdirSync(dotfilesDir, { recursive: true });
+
+    const newTarget = '/Users/oliverjaegle/SynologyDrive/dotfiles/.ssh';
+    fs.symlinkSync(newTarget, path.join(dotfilesDir, '.ssh'));
+
+    // Pre-existing stale symlink pointing elsewhere
+    fs.symlinkSync('/old/path/.ssh', path.join(home, '.ssh'));
+
+    await restoreDotfiles(dest, home);
+
+    expect(fs.readlinkSync(path.join(home, '.ssh'))).toBe(newTarget);
+  });
+
+  it('skips OneDrive conflict copies (entries ending with space+number)', async () => {
+    const dest = makeTmpDir();
+    const home = makeTmpDir();
+    const dotfilesDir = path.join(dest, 'dotfiles');
+    fs.mkdirSync(dotfilesDir, { recursive: true });
+    fs.writeFileSync(path.join(dotfilesDir, '.zshrc'), 'good');
+    fs.writeFileSync(path.join(dotfilesDir, '.zshrc 1'), 'conflict copy');
+
+    await restoreDotfiles(dest, home);
+
+    // Only .zshrc triggers rsync, not the conflict copy
+    const rsyncArgs = mockSpawn.mock.calls.flatMap(([, args]) => args);
+    expect(rsyncArgs.some(a => a.includes('.zshrc 1'))).toBe(false);
+    expect(rsyncArgs.some(a => a.includes('.zshrc'))).toBe(true);
+  });
 });
