@@ -44,26 +44,36 @@ export async function runRestore() {
 
   const dryRunSuffix = process.env.DRY_RUN === 'true' ? ' (DRY RUN — no commands executed)' : '';
   p.intro(`mac-backup — restore${dryRunSuffix}`);
-  p.note(available.map(a => `• ${a}`).join('\n'), 'Available to restore');
 
-  let confirmed = true;
+  let toRestore;
   if (process.env.YES === 'true') {
-    p.log.step('Proceed with restore? Yes (--yes flag)');
+    toRestore = available;
+    p.log.step(`Restoring: ${available.join(', ')} (--yes flag)`);
   } else {
-    confirmed = await p.confirm({ message: 'Proceed with restore?' });
+    const selected = await p.multiselect({
+      message: 'What do you want to restore?',
+      options: available.map(a => ({ value: a, label: a })),
+      initialValues: available,
+    });
+    if (p.isCancel(selected)) {
+      p.outro('Nothing restored.');
+      return;
+    }
+    toRestore = selected;
   }
-  if (p.isCancel(confirmed) || !confirmed) {
-    p.outro('Nothing restored.');
+
+  if (toRestore.length === 0) {
+    p.outro('Nothing selected.');
     return;
   }
 
   try {
-    if (available.includes('homebrew')) {
+    if (toRestore.includes('homebrew')) {
       await runStep('Homebrew packages', () => restoreBrew(dest));
     }
 
     // Restore dotfiles first - this includes SSH keys needed for git clones
-    if (available.includes('dotfiles')) {
+    if (toRestore.includes('dotfiles')) {
       const dotfilesSpinner = p.spinner();
       dotfilesSpinner.start('Dotfiles — restoring...');
 
@@ -93,7 +103,7 @@ export async function runRestore() {
       sshSpinner.stop(`SSH keys: ${sshKeyCount} added ✓`);
     }
 
-    if (available.includes('git')) {
+    if (toRestore.includes('git')) {
       const gitBackupDir = path.join(dest, 'git');
       const repoDirs = fs.readdirSync(gitBackupDir, { withFileTypes: true })
         .filter(e => e.isDirectory())
