@@ -99,34 +99,31 @@ export async function backupDotfiles(paths, homeDir, dest) {
  */
 export async function restoreDotfiles(dest, homeDir, onProgress = () => {}) {
   const dotfilesDir = path.join(dest, 'dotfiles');
-  // Filter out OneDrive conflict copies (e.g. ".ssh 1", ".ssh 2") and sidecar
-  // files (.symlink extension handled separately below).
-  const entries = fs.readdirSync(dotfilesDir)
-    .filter(e => !/\s\d+$/.test(e) && !e.endsWith('.symlink'));
+  const all = fs.readdirSync(dotfilesDir)
+    .filter(e => !/\s\d+$/.test(e)); // skip OneDrive conflict copies
 
-  // Build a set of names that have a .symlink sidecar so restore can handle them
-  // even when OneDrive has turned the original symlink into a directory.
-  const symlinkSidecars = new Set(
-    fs.readdirSync(dotfilesDir)
-      .filter(e => e.endsWith('.symlink'))
-      .map(e => e.slice(0, -'.symlink'.length))
-  );
+  // Process .symlink sidecars first — these are authoritative regardless of
+  // whether OneDrive also stored a mangled directory/file for the same name.
+  const sidecars = all.filter(e => e.endsWith('.symlink'));
+  const sidecarNames = new Set(sidecars.map(e => e.slice(0, -'.symlink'.length)));
+
+  for (const sidecar of sidecars) {
+    const name = sidecar.slice(0, -'.symlink'.length);
+    const target = fs.readFileSync(path.join(dotfilesDir, sidecar), 'utf8').trim();
+    const destEntry = path.join(homeDir, name);
+    try {
+      fs.rmSync(destEntry, { recursive: true, force: true });
+    } catch { /* destination doesn't exist */ }
+    fs.symlinkSync(target, destEntry);
+    onProgress({ name, step: 'symlink', status: 'ok', detail: `-> ${target}` });
+  }
+
+  // Process regular entries, skipping anything covered by a sidecar.
+  const entries = all.filter(e => !e.endsWith('.symlink') && !sidecarNames.has(e));
 
   for (const entry of entries) {
     const fullEntry = path.join(dotfilesDir, entry);
     const destEntry = path.join(homeDir, entry);
-
-    // Sidecar takes priority: if backup wrote a .symlink file for this entry,
-    // recreate the symlink regardless of what OneDrive stored for the entry itself.
-    if (symlinkSidecars.has(entry)) {
-      const target = fs.readFileSync(path.join(dotfilesDir, `${entry}.symlink`), 'utf8').trim();
-      try {
-        fs.rmSync(destEntry, { recursive: true, force: true });
-      } catch { /* destination doesn't exist */ }
-      fs.symlinkSync(target, destEntry);
-      onProgress({ name: entry, step: 'symlink', status: 'ok', detail: `-> ${target}` });
-      continue;
-    }
 
     let srcStat;
     try {
