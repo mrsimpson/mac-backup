@@ -59,6 +59,19 @@ export async function backupDotfiles(paths, homeDir, dest) {
 
   for (const name of paths) {
     const src = path.join(homeDir, name);
+
+    // If the source is a symlink, store the target in a sidecar file.
+    // OneDrive silently dereferences symlinks, so we can't rely on the
+    // symlink being preserved in the backup directory itself.
+    let srcStat;
+    try { srcStat = fs.lstatSync(src); } catch { continue; }
+
+    if (srcStat.isSymbolicLink()) {
+      const target = fs.readlinkSync(src);
+      fs.writeFileSync(path.join(dotfilesDir, `${name}.symlink`), target, 'utf8');
+      continue; // don't rsync the dereferenced contents
+    }
+
     const dst = dotfilesDir + '/';
     // -rlptgo: equivalent to -a minus -D (--devices --specials).
     // -D causes openrsync to try copying socket files (e.g. ~/.gnupg/S.gpg-agent)
@@ -86,15 +99,34 @@ export async function backupDotfiles(paths, homeDir, dest) {
  */
 export async function restoreDotfiles(dest, homeDir, onProgress = () => {}) {
   const dotfilesDir = path.join(dest, 'dotfiles');
-  // Filter out OneDrive conflict copies (e.g. ".ssh 1", ".ssh 2") — these are
-  // duplicates created by OneDrive when a file/dir was written while syncing and
-  // should never be restored to the home directory.
+  // Filter out OneDrive conflict copies (e.g. ".ssh 1", ".ssh 2") and sidecar
+  // files (.symlink extension handled separately below).
   const entries = fs.readdirSync(dotfilesDir)
-    .filter(e => !/\s\d+$/.test(e));
+    .filter(e => !/\s\d+$/.test(e) && !e.endsWith('.symlink'));
+
+  // Build a set of names that have a .symlink sidecar so restore can handle them
+  // even when OneDrive has turned the original symlink into a directory.
+  const symlinkSidecars = new Set(
+    fs.readdirSync(dotfilesDir)
+      .filter(e => e.endsWith('.symlink'))
+      .map(e => e.slice(0, -'.symlink'.length))
+  );
 
   for (const entry of entries) {
     const fullEntry = path.join(dotfilesDir, entry);
     const destEntry = path.join(homeDir, entry);
+
+    // Sidecar takes priority: if backup wrote a .symlink file for this entry,
+    // recreate the symlink regardless of what OneDrive stored for the entry itself.
+    if (symlinkSidecars.has(entry)) {
+      const target = fs.readFileSync(path.join(dotfilesDir, `${entry}.symlink`), 'utf8').trim();
+      try {
+        fs.rmSync(destEntry, { recursive: true, force: true });
+      } catch { /* destination doesn't exist */ }
+      fs.symlinkSync(target, destEntry);
+      onProgress({ name: entry, step: 'symlink', status: 'ok', detail: `-> ${target}` });
+      continue;
+    }
 
     let srcStat;
     try {
@@ -104,19 +136,13 @@ export async function restoreDotfiles(dest, homeDir, onProgress = () => {}) {
       continue;
     }
 
-    // Symlinks in the backup (e.g. .ssh -> /Users/.../SynologyDrive/dotfiles/.ssh)
-    // must be recreated as symlinks — openrsync on macOS writes the target path as
-    // a plain text file instead of creating a proper symlink.
+    // Fallback: if the backup still has a real symlink (local fs, no OneDrive mangling),
+    // recreate it directly.
     if (srcStat.isSymbolicLink()) {
       const target = fs.readlinkSync(fullEntry);
       try {
-        // Remove whatever is already at the destination so we can (re)create it
-        if (fs.existsSync(destEntry) || fs.lstatSync(destEntry)) {
-          fs.rmSync(destEntry, { recursive: true, force: true });
-        }
-      } catch {
-        // destination doesn't exist — that's fine
-      }
+        fs.rmSync(destEntry, { recursive: true, force: true });
+      } catch { /* destination doesn't exist */ }
       fs.symlinkSync(target, destEntry);
       onProgress({ name: entry, step: 'symlink', status: 'ok', detail: `-> ${target}` });
       continue;

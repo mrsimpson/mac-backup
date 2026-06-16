@@ -117,6 +117,7 @@ describe('backupDotfiles', () => {
   it('calls spawn at least once (smoke test)', async () => {
     const home = makeTmpDir();
     const dest = makeTmpDir();
+    fs.writeFileSync(path.join(home, '.zshrc'), '');
     await backupDotfiles(['.zshrc'], home, dest);
     expect(mockSpawn).toHaveBeenCalled();
   });
@@ -124,6 +125,8 @@ describe('backupDotfiles', () => {
   it('uses rsync for all paths with -rlptgo (no -D/--specials)', async () => {
     const home = makeTmpDir();
     const dest = makeTmpDir();
+    fs.writeFileSync(path.join(home, '.zshrc'), '');
+    fs.writeFileSync(path.join(home, '.gitconfig'), '');
     await backupDotfiles(['.zshrc', '.gitconfig'], home, dest);
 
     const calls = mockSpawn.mock.calls;
@@ -139,6 +142,7 @@ describe('backupDotfiles', () => {
   it('uses rsync for .ssh (no GPG encryption)', async () => {
     const home = makeTmpDir();
     const dest = makeTmpDir();
+    fs.mkdirSync(path.join(home, '.ssh'));
     await backupDotfiles(['.ssh'], home, dest);
 
     const calls = mockSpawn.mock.calls;
@@ -146,13 +150,33 @@ describe('backupDotfiles', () => {
     expect(calls.every(([, args]) => !args.some(a => a.includes('gpg')))).toBe(true);
   });
 
-  it('uses rsync for .gnupg (no GPG encryption)', async () => {
+  it('backup writes a .symlink sidecar for symlinked dotfiles instead of rsyncing', async () => {
     const home = makeTmpDir();
     const dest = makeTmpDir();
-    await backupDotfiles(['.gnupg'], home, dest);
+    const target = '/Users/oliverjaegle/SynologyDrive/dotfiles/.ssh';
+    fs.symlinkSync(target, path.join(home, '.ssh'));
 
-    const calls = mockSpawn.mock.calls;
-    expect(calls.every(([cmd]) => cmd === 'rsync')).toBe(true);
+    await backupDotfiles(['.ssh'], home, dest);
+
+    // rsync must NOT have been called (symlink, not a real dir/file)
+    expect(mockSpawn).not.toHaveBeenCalled();
+
+    // sidecar file must contain the target path
+    const sidecar = path.join(dest, 'dotfiles', '.ssh.symlink');
+    expect(fs.existsSync(sidecar)).toBe(true);
+    expect(fs.readFileSync(sidecar, 'utf8').trim()).toBe(target);
+  });
+
+  it('backup rsyncs non-symlink entries normally', async () => {
+    const home = makeTmpDir();
+    const dest = makeTmpDir();
+    fs.writeFileSync(path.join(home, '.zshrc'), 'alias ll=ls\n');
+
+    await backupDotfiles(['.zshrc'], home, dest);
+
+    expect(mockSpawn).toHaveBeenCalled();
+    const [cmd] = mockSpawn.mock.calls[0];
+    expect(cmd).toBe('rsync');
   });
 });
 
@@ -185,7 +209,47 @@ describe('restoreDotfiles', () => {
     expect(calls.every(([cmd]) => cmd !== 'gpg')).toBe(true);
   });
 
-  it('recreates symlinks from backup without calling rsync for them', async () => {
+  it('recreates symlink from .symlink sidecar file (OneDrive path)', async () => {
+    const dest = makeTmpDir();
+    const home = makeTmpDir();
+    const dotfilesDir = path.join(dest, 'dotfiles');
+    fs.mkdirSync(dotfilesDir, { recursive: true });
+
+    const target = '/Users/oliverjaegle/SynologyDrive/dotfiles/.ssh';
+    // OneDrive turned .ssh symlink into a directory — but sidecar preserves intent
+    fs.mkdirSync(path.join(dotfilesDir, '.ssh'));
+    fs.writeFileSync(path.join(dotfilesDir, '.ssh.symlink'), target, 'utf8');
+
+    const progress = [];
+    await restoreDotfiles(dest, home, (evt) => progress.push(evt));
+
+    // rsync must NOT be called for the symlink entry
+    expect(mockSpawn).not.toHaveBeenCalled();
+
+    const destLink = path.join(home, '.ssh');
+    expect(fs.lstatSync(destLink).isSymbolicLink()).toBe(true);
+    expect(fs.readlinkSync(destLink)).toBe(target);
+    expect(progress.some(e => e.step === 'symlink' && e.status === 'ok')).toBe(true);
+  });
+
+  it('sidecar takes priority over an actual symlink in backup dir', async () => {
+    const dest = makeTmpDir();
+    const home = makeTmpDir();
+    const dotfilesDir = path.join(dest, 'dotfiles');
+    fs.mkdirSync(dotfilesDir, { recursive: true });
+
+    const sidecarTarget = '/correct/path/.ssh';
+    const staleTarget = '/wrong/path/.ssh';
+    // backup dir has a real symlink (stale) AND a sidecar (authoritative)
+    fs.symlinkSync(staleTarget, path.join(dotfilesDir, '.ssh'));
+    fs.writeFileSync(path.join(dotfilesDir, '.ssh.symlink'), sidecarTarget, 'utf8');
+
+    await restoreDotfiles(dest, home);
+
+    expect(fs.readlinkSync(path.join(home, '.ssh'))).toBe(sidecarTarget);
+  });
+
+  it('recreates real symlink from backup when no sidecar exists', async () => {
     const dest = makeTmpDir();
     const home = makeTmpDir();
     const dotfilesDir = path.join(dest, 'dotfiles');
