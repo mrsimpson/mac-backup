@@ -77,6 +77,38 @@ export function run(cmd, args, opts = {}) {
 }
 
 /**
+ * Run a command and capture its stdout as a string.
+ * In dry-run mode returns an empty string.
+ *
+ * @param {string}   cmd  - Command to run.
+ * @param {string[]} args - Argument array.
+ * @param {object}   [opts] - Options passed to spawn.
+ * @returns {Promise<string>}
+ */
+export function capture(cmd, args, opts = {}) {
+  if (isDryRun()) {
+    console.error('[DRY-RUN]', [cmd, ...args].join(' '));
+    return Promise.resolve('');
+  }
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'inherit'], ...opts });
+    const chunks = [];
+    child.stdout.on('data', d => chunks.push(d));
+    child.on('error', reject);
+    child.on('close', (code, signal) => {
+      if (signal) {
+        reject(new Error(`${cmd} killed by signal ${signal}`));
+      } else if (code !== 0) {
+        reject(new Error(`${cmd} exited with code ${code}`));
+      } else {
+        resolve(Buffer.concat(chunks).toString('utf8'));
+      }
+    });
+  });
+}
+
+/**
  * Run a shell pipeline or command that requires shell features (pipes, redirects).
  * Uses spawn with shell:true. Same async/dry-run behaviour as run().
  *
